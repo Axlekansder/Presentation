@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { AnatomyData } from './slides';
 
-// Etiketterna tonar in en i taget, och ledarlinjen ritas i takt med sin etikett.
-// Avslöjandet startar på ett klick, så fördröjningen behöver bara vara en andhämtning.
-const REVEAL_DELAY = 80;
-const REVEAL_STAGGER = 160;
-const REVEAL_IN = 300;
+/** Hur snabbt en etikett tonar mellan sina lägen. Lägre = tröghet. */
+const EASE_MS = 140;
+
+/** Opacitet för en etikett som redan presenterats och lagt sig bakom. */
+const SETTLED = 0.34;
 
 /** Under den här bredden ligger noterna under koden, och linjerna vore obegripliga. */
 const STACK_WIDTH = 900;
@@ -25,14 +25,23 @@ function arcOffset(index: number, count: number) {
 
 export default function Anatomy({
   data,
-  revealed,
+  step,
+  builds,
 }: {
   data: AnatomyData;
-  /** Falskt tills presentatören klickat fram noterna. */
-  revealed: boolean;
+  /** Hur många klick som tagits på bilden. 0 = inget avslöjat än. */
+  step: number;
+  /**
+   * Är `builds` minst lika stort som antalet etiketter tas de fram en i taget,
+   * och den föregående lägger sig bakom. Annars kommer alla på första klicket.
+   */
+  builds: number;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const leaders = useRef<HTMLCanvasElement>(null);
+  // Bevaras mellan klicken, så en etikett tonar från där den var.
+  const alpha = useRef<number[]>([]);
+  const slide = useRef<number[]>([]);
 
   useEffect(() => {
     const node = root.current;
@@ -41,24 +50,27 @@ export default function Anatomy({
     if (!node || !canvas || !context) return;
 
     const notes = node.querySelectorAll<HTMLElement>('.anatomy-note');
+    const count = notes.length;
+    const stepped = builds >= count;
 
-    const wide = node.getBoundingClientRect().width > STACK_WIDTH;
-    const arc = (i: number) => (wide ? arcOffset(i, notes.length) : 0);
+    // Vilket läge varje etikett är på väg mot.
+    const targets = Array.from({ length: count }, (_, i) => {
+      if (!stepped) return step > 0 ? 1 : 0;
+      if (step < i + 1) return 0;
+      return step === i + 1 ? 1 : SETTLED;
+    });
 
-    // Före klicket ligger noterna gömda och duken tom.
-    if (!revealed) {
-      notes.forEach((note, i) => {
-        note.style.opacity = '0';
-        note.style.transform = `translateX(${arc(i) + 12}px)`;
-      });
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      return;
+    if (alpha.current.length !== count) {
+      alpha.current = new Array(count).fill(0);
+      slide.current = new Array(count).fill(1);
     }
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const started = performance.now();
+    const wide = node.getBoundingClientRect().width > STACK_WIDTH;
+    const arc = (i: number) => (wide ? arcOffset(i, count) : 0);
+
     let frame = 0;
+    let previous = 0;
     let disposed = false;
 
     const schedule = () => {
@@ -68,6 +80,10 @@ export default function Anatomy({
     function draw(now: number) {
       frame = 0;
       if (disposed) return;
+      const delta = previous ? Math.min(now - previous, 64) : 16;
+      previous = now;
+      // Bildfrekvensoberoende utjämning — samma tempo på 60 och 120 Hz.
+      const factor = reduced.matches ? 1 : 1 - Math.exp(-delta / EASE_MS);
 
       const bounds = node!.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -84,59 +100,60 @@ export default function Anatomy({
       const accent = styles.getPropertyValue('--accent').trim() || '#79e5cf';
       const ground = styles.getPropertyValue('--bg').trim() || '#071316';
       const stacked = bounds.width <= STACK_WIDTH;
-      let animating = false;
+      let moving = false;
 
       notes.forEach((note, i) => {
-          const progress = reduced.matches
-            ? 1
-            : Math.max(
-                0,
-                Math.min(
-                  1,
-                  (now - started - REVEAL_DELAY - i * REVEAL_STAGGER) / REVEAL_IN,
-                ),
-              );
-          if (progress < 1) animating = true;
-          note.style.opacity = String(progress);
-          note.style.transform = `translateX(${arc(i) + (1 - progress) * 12}px)`;
+        const target = targets[i];
+        const wants = target > 0 ? 0 : 1;
+        alpha.current[i] += (target - alpha.current[i]) * factor;
+        slide.current[i] += (wants - slide.current[i]) * factor;
+        if (Math.abs(target - alpha.current[i]) > 0.004) moving = true;
+        else alpha.current[i] = target;
 
-          const anchor = node!.querySelector<HTMLElement>(
-            `.anchor-point[data-anchor="${i}"]`,
-          );
-          if (!anchor || stacked || progress <= 0) return;
+        const shown = alpha.current[i];
+        note.style.opacity = String(shown);
+        note.style.transform = `translateX(${arc(i) + slide.current[i] * 12}px)`;
 
-          // Allt mäts mot samma rot, så en animerad förälder påverkar inte linjen.
-          const a = anchor.getBoundingClientRect();
-          const label = note.getBoundingClientRect();
-          const ax = a.x + a.width - bounds.x + 4;
-          const ay = a.y + a.height / 2 - bounds.y;
-          const lx = label.x - bounds.x;
-          const ly = label.y - bounds.y + 13;
-          if (![ax, ay, lx, ly].every(Number.isFinite)) return;
+        const anchor = node!.querySelector<HTMLElement>(
+          `.anchor-point[data-anchor="${i}"]`,
+        );
+        if (!anchor || stacked || shown <= 0.01) return;
 
-          context!.strokeStyle = accent;
-          context!.lineWidth = 1;
-          context!.globalAlpha = 0.5 * progress;
-          context!.beginPath();
-          context!.moveTo(ax, ay);
-          context!.lineTo(lx - 26, ly);
-          context!.lineTo(lx - 9, ly);
-          context!.stroke();
+        // Allt mäts mot samma rot, så en animerad förälder påverkar inte linjen.
+        const a = anchor.getBoundingClientRect();
+        const label = note.getBoundingClientRect();
+        const ax = a.x + a.width - bounds.x + 4;
+        const ay = a.y + a.height / 2 - bounds.y;
+        const lx = label.x - bounds.x;
+        const ly = label.y - bounds.y + 13;
+        if (![ax, ay, lx, ly].every(Number.isFinite)) return;
 
-          // Punkten sitter på raden den pekar ut.
-          context!.beginPath();
-          context!.arc(ax, ay, 2.5, 0, Math.PI * 2);
-          context!.globalAlpha = 0.9 * progress;
-          context!.fillStyle = ground;
-          context!.fill();
-          context!.stroke();
-          context!.globalAlpha = 1;
-        });
+        context!.strokeStyle = accent;
+        context!.lineWidth = 1;
+        context!.globalAlpha = 0.55 * shown;
+        context!.beginPath();
+        context!.moveTo(ax, ay);
+        context!.lineTo(lx - 26, ly);
+        context!.lineTo(lx - 9, ly);
+        context!.stroke();
 
-      if (animating) schedule();
+        // Punkten sitter på raden den pekar ut.
+        context!.beginPath();
+        context!.arc(ax, ay, 2.5, 0, Math.PI * 2);
+        context!.globalAlpha = 0.95 * shown;
+        context!.fillStyle = ground;
+        context!.fill();
+        context!.stroke();
+        context!.globalAlpha = 1;
+      });
+
+      if (moving) schedule();
     }
 
-    const wake = () => schedule();
+    const wake = () => {
+      previous = 0;
+      schedule();
+    };
     const observer = new ResizeObserver(wake);
     observer.observe(node);
     window.addEventListener('resize', wake);
@@ -150,13 +167,13 @@ export default function Anatomy({
       observer.disconnect();
       window.removeEventListener('resize', wake);
     };
-  }, [data, revealed]);
+  }, [data, step, builds]);
 
   const lines = data.code.split('\n');
   const anchored = new Map(data.notes.map((note, i) => [note.line, i]));
 
   return (
-    <div className="anatomy" ref={root} data-revealed={revealed}>
+    <div className="anatomy" ref={root} data-revealed={step > 0}>
       <canvas className="leaders" ref={leaders} aria-hidden="true" />
       <pre className="anatomy-code">
         {lines.map((line, i) => (

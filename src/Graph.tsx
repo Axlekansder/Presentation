@@ -77,8 +77,8 @@ export default function Graph({ data, step }: { data: GraphData; step: number })
           const a = boxes[from];
           const b = boxes[to];
           if (!a || !b) return null;
-          const start = edgePoint(a, { x: b.x + b.width / 2, y: b.y + b.height / 2 }, 5);
-          const end = edgePoint(b, { x: a.x + a.width / 2, y: a.y + a.height / 2 }, 5);
+          const start = edgePoint(a, { x: b.x + b.width / 2, y: b.y + b.height / 2 }, 13);
+          const end = edgePoint(b, { x: a.x + a.width / 2, y: a.y + a.height / 2 }, 13);
           return (
             <path
               key={`${from}-${to}`}

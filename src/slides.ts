@@ -166,8 +166,8 @@ export const slides: Slide[] = [
           heading: 'Kitet',
           text: 'Ett repo, en marketplace.json, två plugins med var sin version.',
           points: [
-            'Projektet pinnar en tagg i .claude/settings.json',
-            'sortera-agent-skills--v0.6.0, aldrig ”senaste”',
+            'Projektet pekar ut kitet som git-källa och aktiverar båda pluginen därifrån',
+            'Pinnat till en tagg — v0.6.0, aldrig ”senaste” och aldrig kopierat',
           ],
           links: ['factory'],
         },
@@ -258,6 +258,62 @@ export const slides: Slide[] = [
     ],
     detail:
       'Ett repo, en marketplace.json, två oberoende versioner. Splittet gjordes för att delarna har olika förtroendekrav: markdown kan man granska, skript måste man lita på. Nu kan de också ändras i olika takt.',
+  },
+  {
+    chapter: 'Distributionen',
+    title: 'En källa,\npinnad per projekt.',
+    inlineTitle: true,
+    body: 'Så här ser .claude/settings.json ut i ett projekt som Factory rest.',
+    // Lika många byggsteg som etiketter — då tas de fram en i taget.
+    builds: 4,
+    anatomy: {
+      code: `{
+  "extraKnownMarketplaces": {
+    "sortera-agent-development-kit": {
+      "source": {
+        "source": "git",
+        "url": "https://dev.azure.com/SorteraOne/…",
+        "ref": "sortera-agent-skills--v0.6.0"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "sortera-agent-skills@…-development-kit": true,
+    "sortera-agent-hooks@…-development-kit": true
+  },
+  "hooks": {
+    "SessionStart": ["…/session-start-skills.mjs"]
+  }
+}`,
+      notes: [
+        {
+          line: 1,
+          tag: 'Källan',
+          heading: 'Kitet bor utanför projektet',
+          text: 'Ingen kod kopieras in. Repot pekas ut som en git-marketplace, ungefär som ett paketregister.',
+        },
+        {
+          line: 6,
+          tag: 'Pinnet',
+          heading: 'En tagg, aldrig ”senaste”',
+          text: 'Ett inkopierat recept hade låst projektet vid den månad det genererades. En pinne är ett medvetet val, med datum på.',
+        },
+        {
+          line: 10,
+          tag: 'Båda pluginen',
+          heading: 'Recepten och grindarna aktiveras ihop',
+          text: 'Recepten går att installera ensamma. Men ett genererat projekt drivs ofta av någon som inte kan bedöma koden som kommer ut — där är grindarna hela poängen.',
+        },
+        {
+          line: 15,
+          tag: 'Projektets egen hook',
+          heading: 'Säger till om paketet uteblev',
+          text: 'Laddar det inte, kör inte heller pluginets hookar — och sessionen ser identisk ut med en fungerande.',
+        },
+      ],
+    },
+    detail:
+      'Fyra rader avgör alltihop: var koden kommer ifrån, vilken version, vad som aktiveras — och vem som säger till när ingenting kom fram.',
   },
   {
     chapter: 'Hookarna',
@@ -396,7 +452,7 @@ argument-hint: "{Verb}{Resource}" (e.g. SaveContact)
         src: '/demo/shot-marketplace.webp',
         alt: 'Claude Code lägger till marketplacen och installerar pluginet',
         heading: 'Marketplacen',
-        text: 'Ett privat repo i SorteraOne/Sortera Lab. Projektet pinnar sedan en tagg i .claude/settings.json — sortera-agent-skills--v0.6.0, inte ”senaste”.',
+        text: 'Ett privat repo i SorteraOne/Sortera Lab. Projektet kopierar ingenting: .claude/settings.json pekar ut marketplacen som git-källa och aktiverar båda pluginen därifrån, pinnade till en tagg. Ett inkopierat recept hade låst projektet vid den månad det genererades.',
       },
       {
         src: '/demo/shot-session.webp',

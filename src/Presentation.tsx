@@ -410,7 +410,7 @@ function SlideBody({
         </div>
       )}
       {slide.anatomy && !leaving && (
-        <Anatomy data={slide.anatomy} revealed={step > 0} />
+        <Anatomy data={slide.anatomy} step={step} builds={slide.builds ?? 0} />
       )}
       {slide.graph && !leaving && <Graph data={slide.graph} step={step} />}
       {slide.shots && <Shots shots={slide.shots} step={step} />}
